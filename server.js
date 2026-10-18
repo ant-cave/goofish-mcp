@@ -43,7 +43,7 @@ const PORT = Number(process.env.GOOFISH_PORT) || 8670;
 const HOST = process.env.GOOFISH_HOST || '127.0.0.1';
 const API_KEY = (process.env.GOOFISH_API_KEY || '').trim();
 // OAuth issuer（必须是 https 公网地址，SDK 强制校验）
-const ISSUER = process.env.GOOFISH_ISSUER || 'https://MCP_HOST_EXAMPLE.com';
+const ISSUER = process.env.GOOFISH_ISSUER || 'http://localhost:8670';
 
 // 单例 OAuth provider（内存 + 磁盘持久化）
 let _oauthAuth = null;
@@ -233,7 +233,7 @@ server.registerTool('get_item_detail', {
 const app = createMcpExpressApp({
   host: HOST,
   // 放行公网域名，否则 DNS rebinding 防护会拦截 nginx 转发的公网 Host
-  allowedHosts: ['MCP_HOST_EXAMPLE.com', 'localhost', '127.0.0.1', '::1'],
+  allowedHosts: (process.env.GOOFISH_ALLOWED_HOSTS || 'localhost,127.0.0.1,::1').split(',').map(s => s.trim()).filter(Boolean),
 });
 
 // ---- OAuth 授权码服务器（挂载到 app 根）----
