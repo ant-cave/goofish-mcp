@@ -4,8 +4,9 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>管理 · goofish-mcp</title>
+  <link rel="icon" href="data:," />
   <link rel="stylesheet" href="/app.css" />
-  <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js" onerror="window.__noqr = 1"></script>
+  <script src="/vendor/qrcode.min.js" onerror="window.__noqr = 1"></script>
   <script>
     // 应用启动前根据本地偏好或系统主题设置暗色模式，避免页面闪烁（复刻 ant-toolkit）
     ;(function () {
@@ -38,262 +39,215 @@
       <button type="button" class="btn btn-primary btn-sm" id="demoConfirmBtn" hidden>模拟扫码确认</button>
     </div>
 
-    <!-- 闲鱼登录态 -->
-    <section class="card">
-      <div class="card-head">
-        <span class="card-title">闲鱼登录态</span>
+    <!-- 统计卡 -->
+    <section class="stats-grid" id="statsGrid">
+      <div class="stat-card"><div class="stat-label">总请求</div><div class="stat-value" id="stTotal">-</div><div class="stat-extra" id="stTotalExtra"></div></div>
+      <div class="stat-card"><div class="stat-label">成功率</div><div class="stat-value" id="stRate">-</div><div class="stat-extra" id="stRateExtra"></div></div>
+      <div class="stat-card"><div class="stat-label">今日调用</div><div class="stat-value" id="stToday">-</div><div class="stat-extra">近 7 天窗口</div></div>
+      <div class="stat-card"><div class="stat-label">平均耗时</div><div class="stat-value" id="stAvg">-</div><div class="stat-extra" id="stAvgExtra"></div></div>
+    </section>
+
+    <!-- Tab（复刻 TabNav 下划线指示，移动端横滚） -->
+    <div class="tabs" role="tablist">
+      <button class="tab active" data-tab="overview">概览</button>
+      <button class="tab" data-tab="logs">调用日志 <span class="tab-count" id="tabLogCount"></span></button>
+      <button class="tab" data-tab="keys">API Keys <span class="tab-count" id="tabKeyCount"></span></button>
+      <button class="tab" data-tab="settings">设置</button>
+    </div>
+
+    <!-- ============ 概览 ============ -->
+    <section class="panel" id="panel-overview">
+      <!-- 闲鱼登录态 -->
+      <div class="card">
+        <div class="card-head">
+          <span class="card-title">闲鱼登录态</span>
+        </div>
+        <div class="status-row">
+          <span class="status-badge" id="loginBadge">…</span>
+          <span class="status-meta" id="cookieMeta"></span>
+        </div>
+        <p class="anon-tip" id="anonTip" hidden>MCP 匿名模式：搜索 / 详情可用，发布等需登录</p>
+        <div class="qr-actions">
+          <button type="button" class="btn btn-primary" id="qrStartBtn">扫码登录闲鱼</button>
+          <button type="button" class="btn btn-ghost" id="clearSessionBtn">清除登录态</button>
+        </div>
+        <div class="qr-box" id="qrBox" hidden>
+          <div id="qrImg"></div>
+          <div class="qr-status" id="qrStatus"></div>
+        </div>
       </div>
-      <div class="status-row">
-        <span class="status-badge" id="loginBadge">…</span>
-        <span class="status-meta" id="cookieMeta"></span>
+
+      <!-- MCP 接入 -->
+      <div class="card">
+        <div class="card-head">
+          <span class="card-title">MCP 接入</span>
+        </div>
+        <div class="kv-list">
+          <div>
+            <div class="kv-label">MCP Endpoint（streamable-http）</div>
+            <div class="code-row">
+              <div class="code-block" id="endpointBox"></div>
+              <button type="button" class="btn btn-ghost btn-sm" data-copy="#endpointBox">复制</button>
+            </div>
+          </div>
+          <div>
+            <div class="kv-label">客户端配置示例（OpenClaw / Claude / ChatGPT）</div>
+            <div class="code-row">
+              <pre class="code-block" id="configBox" style="margin:0"></pre>
+              <button type="button" class="btn btn-ghost btn-sm" data-copy="#configBox">复制</button>
+            </div>
+          </div>
+          <div>
+            <div class="kv-label">鉴权方式：Authorization: Bearer &lt;API Key&gt;（在「API Keys」面板创建与管理，此处不展示）</div>
+          </div>
+          <div>
+            <div class="kv-label">可用工具</div>
+            <div class="tool-list">
+              <div class="tool-item">
+                <div class="tool-name">search_items</div>
+                <div class="tool-desc">关键词搜索闲鱼商品，支持价格区间 / 排序 / 只看个人闲置 / 验货宝筛选，匿名可用</div>
+              </div>
+              <div class="tool-item">
+                <div class="tool-name">get_item_detail</div>
+                <div class="tool-desc">通过 itemId 获取商品完整详情（标题 / 价格 / 描述 / 卖家 / 图片 URL），匿名可用</div>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
-      <p class="anon-tip" id="anonTip" hidden>MCP 匿名模式：搜索 / 详情可用，发布等需登录</p>
-      <div class="qr-actions">
-        <button type="button" class="btn btn-primary" id="qrStartBtn">扫码登录闲鱼</button>
-        <button type="button" class="btn btn-ghost" id="clearSessionBtn">清除登录态</button>
-      </div>
-      <div class="qr-box" id="qrBox" hidden>
-        <div id="qrImg"></div>
-        <div class="qr-status" id="qrStatus"></div>
+
+      <!-- OAuth Tokens -->
+      <div class="card">
+        <div class="card-head">
+          <span class="card-title">OAuth Tokens</span>
+          <span class="card-count" id="tokenCount">0</span>
+          <span class="card-hint">ChatGPT 等 OAuth 客户端授权后签发，可单独吊销</span>
+        </div>
+        <div id="tokenTableWrap" hidden>
+          <div class="table-wrap" style="max-height:none">
+            <table class="table min-w-sm">
+              <thead>
+                <tr><th>ID</th><th>Client</th><th>Scopes</th><th>过期</th><th class="actions">操作</th></tr>
+              </thead>
+              <tbody id="tokenRows"></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="empty" id="tokenEmpty">暂无 token</div>
       </div>
     </section>
 
-    <!-- OAuth Tokens -->
-    <section class="card">
-      <div class="card-head">
-        <span class="card-title">OAuth Tokens</span>
-        <span class="card-count" id="tokenCount">0</span>
+    <!-- ============ 调用日志 ============ -->
+    <section class="panel" id="panel-logs" hidden>
+      <div class="card">
+        <div class="card-head">
+          <span class="card-title">调用日志</span>
+          <span class="card-count" id="logTotal">0 条</span>
+          <span class="card-hint">MCP 请求与管理操作全量审计，保留近 7 天</span>
+        </div>
+        <div class="toolbar">
+          <div class="toolbar-row" style="display:flex;flex-wrap:wrap;gap:0.5rem;align-items:center">
+            <select id="logKind">
+              <option value="">全部类型</option>
+              <option value="mcp">MCP 调用</option>
+              <option value="admin">管理操作</option>
+            </select>
+            <select id="logOk">
+              <option value="">全部结果</option>
+              <option value="true">仅成功</option>
+              <option value="false">仅失败</option>
+            </select>
+            <select id="logTool"><option value="">全部工具</option></select>
+            <input id="logQ" type="search" placeholder="搜索 IP / Key / 参数…" style="flex:1;min-width:8rem" />
+          </div>
+          <div class="spacer"></div>
+          <div class="toolbar-row" style="display:flex;flex-wrap:wrap;gap:0.5rem;align-items:center">
+            <button type="button" class="btn btn-ghost btn-sm" id="logAutoBtn">自动刷新：关</button>
+            <button type="button" class="btn btn-ghost btn-sm" id="logExportBtn">导出 CSV</button>
+            <button type="button" class="btn btn-primary btn-sm" id="logRefreshBtn">查询</button>
+          </div>
+        </div>
+
+        <!-- 桌面：表格 -->
+        <div class="table-wrap desktop-only" id="logTableWrap">
+          <table class="table min-w">
+            <thead>
+              <tr>
+                <th>时间</th><th>类型</th><th>操作 / 工具</th><th>Key</th><th>IP</th><th class="num">耗时</th><th>结果</th><th class="actions">详情</th>
+              </tr>
+            </thead>
+            <tbody id="logRows"></tbody>
+          </table>
+        </div>
+        <!-- 移动端：卡片 -->
+        <div class="mobile-only" id="logMobileWrap" style="border:1px solid var(--border);border-radius:0.125rem">
+          <div class="mobile-cards" id="logMobileRows"></div>
+        </div>
+        <div class="empty" id="logEmpty" hidden>暂无日志</div>
+
+        <div class="pager" id="logPager"></div>
       </div>
-      <div id="tokenTableWrap" hidden>
-        <table class="table">
-          <thead>
-            <tr><th>ID</th><th>Client</th><th>Scopes</th><th>过期</th><th></th></tr>
-          </thead>
-          <tbody id="tokenRows"></tbody>
-        </table>
-      </div>
-      <div class="empty" id="tokenEmpty">暂无 token</div>
     </section>
 
-    <!-- MCP 接入 -->
-    <section class="card">
-      <div class="card-head">
-        <span class="card-title">MCP 接入</span>
+    <!-- ============ API Keys ============ -->
+    <section class="panel" id="panel-keys" hidden>
+      <div class="card">
+        <div class="card-head">
+          <span class="card-title">客户端 API Keys</span>
+          <span class="card-count" id="keyCount">0</span>
+          <span class="card-hint">MCP 客户端调用凭证，可创建多个、单独禁用或删除；禁用后使用该 Key 的请求立即 401</span>
+        </div>
+        <div class="toolbar">
+          <button type="button" class="btn btn-primary btn-sm" id="createKeyBtn">+ 创建 Key</button>
+        </div>
+
+        <div class="table-wrap desktop-only" id="keyTableWrap" style="max-height:none">
+          <table class="table min-w">
+            <thead>
+              <tr><th>名称</th><th>Key</th><th>备注</th><th>状态</th><th>最近使用</th><th class="actions">操作</th></tr>
+            </thead>
+            <tbody id="keyRows"></tbody>
+          </table>
+        </div>
+        <div class="mobile-only" id="keyMobileWrap" style="border:1px solid var(--border);border-radius:0.125rem">
+          <div class="mobile-cards" id="keyMobileRows"></div>
+        </div>
+        <div class="empty" id="keyEmpty" hidden>暂无 Key，点击上方「创建 Key」生成第一个</div>
       </div>
-      <div class="kv-list">
-        <div>
-          <div class="kv-label">MCP Endpoint（streamable-http）</div>
-          <div class="code-row">
-            <div class="code-block" id="endpointBox"></div>
-            <button type="button" class="btn btn-ghost btn-sm" data-copy="#endpointBox">复制</button>
+    </section>
+
+    <!-- ============ 设置 ============ -->
+    <section class="panel" id="panel-settings" hidden>
+      <div class="card">
+        <div class="card-head">
+          <span class="card-title">管理密钥</span>
+        </div>
+        <p style="font-size:0.75rem;color:var(--text-3);margin-bottom:1rem">
+          登录后台与 OAuth 授权使用。当前：<span class="mono" id="adminKeyMask" style="font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace"></span>
+          <br />修改后立即生效（无需重启），<b>所有已登录会话将失效</b>，需用新密钥重新登录。
+        </p>
+        <div style="max-width:24rem;display:flex;flex-direction:column;gap:0.625rem">
+          <div>
+            <label class="field-label" for="newAdminKey">新管理密钥（≥ 8 位）</label>
+            <input class="input mono" type="text" id="newAdminKey" placeholder="输入新密钥，或点击右侧随机生成" />
           </div>
-        </div>
-        <div>
-          <div class="kv-label">客户端配置示例（OpenClaw / Claude / ChatGPT）</div>
-          <div class="code-row">
-            <pre class="code-block" id="configBox" style="margin:0"></pre>
-            <button type="button" class="btn btn-ghost btn-sm" data-copy="#configBox">复制</button>
+          <div>
+            <label class="field-label" for="newAdminKey2">确认新管理密钥</label>
+            <input class="input mono" type="text" id="newAdminKey2" placeholder="再次输入" />
           </div>
-        </div>
-        <div>
-          <div class="kv-label">鉴权方式：Authorization: Bearer &lt;GOOFISH_API_KEY&gt;（登录密钥，此处不展示）</div>
-        </div>
-        <div>
-          <div class="kv-label">可用工具</div>
-          <div class="tool-list">
-            <div class="tool-item">
-              <div class="tool-name">search_items</div>
-              <div class="tool-desc">关键词搜索闲鱼商品，支持价格区间 / 排序 / 只看个人闲置 / 验货宝筛选，匿名可用</div>
-            </div>
-            <div class="tool-item">
-              <div class="tool-name">get_item_detail</div>
-              <div class="tool-desc">通过 itemId 获取商品完整详情（标题 / 价格 / 描述 / 卖家 / 图片 URL），匿名可用</div>
-            </div>
+          <div style="display:flex;gap:0.5rem;flex-wrap:wrap">
+            <button type="button" class="btn btn-ghost" id="genAdminKeyBtn">随机生成</button>
+            <button type="button" class="btn btn-primary" id="saveAdminKeyBtn">保存并重新登录</button>
           </div>
         </div>
       </div>
     </section>
   </main>
 
-  <div class="toast" id="toast" hidden></div>
+  <div class="toast-stack" id="toastStack"></div>
+  <div class="modal" id="modal" hidden><div class="modal-box" id="modalBox"></div></div>
 
-  <script>
-    /* ---------- 主题切换（复刻 toolkit theme store） ---------- */
-    var themeToggle = document.getElementById('themeToggle')
-    var iconSun = document.getElementById('iconSun')
-    var iconMoon = document.getElementById('iconMoon')
-    function refreshIcons() {
-      var dark = document.documentElement.classList.contains('dark')
-      iconSun.hidden = !dark
-      iconMoon.hidden = dark
-      themeToggle.title = dark ? '切换到亮色模式' : '切换到暗色模式'
-    }
-    themeToggle.addEventListener('click', function () {
-      var dark = document.documentElement.classList.contains('dark')
-      localStorage.setItem('toolkit-theme', dark ? 'light' : 'dark')
-      document.documentElement.classList.toggle('dark', !dark)
-      refreshIcons()
-    })
-    refreshIcons()
-
-    /* ---------- Toast ---------- */
-    var toastTimer = null
-    function toast(msg) {
-      var el = document.getElementById('toast')
-      el.textContent = msg
-      el.hidden = false
-      clearTimeout(toastTimer)
-      toastTimer = setTimeout(function () { el.hidden = true }, 2500)
-    }
-
-    /* ---------- 工具 ---------- */
-    function $(id) { return document.getElementById(id) }
-    async function post(url, body) {
-      var res = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: body ? JSON.stringify(body) : undefined,
-      })
-      return res.json().catch(function () { return {} })
-    }
-    function esc(s) {
-      return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
-        return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
-      })
-    }
-
-    /* ---------- 接入信息 ---------- */
-    var endpoint = location.origin + '/mcp'
-    $('endpointBox').textContent = endpoint
-    $('configBox').textContent = JSON.stringify({
-      mcpServers: {
-        goofish: {
-          url: endpoint,
-          transport: 'streamable-http',
-          headers: { Authorization: 'Bearer <your-api-key>' },
-        },
-      },
-    }, null, 2)
-    document.querySelectorAll('[data-copy]').forEach(function (btn) {
-      btn.addEventListener('click', function () {
-        var text = document.querySelector(btn.getAttribute('data-copy')).textContent
-        function ok() { toast('已复制到剪贴板') }
-        function fail() { toast('复制失败，请手动选择复制') }
-        if (navigator.clipboard && navigator.clipboard.writeText) {
-          navigator.clipboard.writeText(text).then(ok, fail)
-        } else {
-          var ta = document.createElement('textarea')
-          ta.value = text
-          document.body.appendChild(ta)
-          ta.select()
-          try { document.execCommand('copy') ? ok() : fail() } catch (e) { fail() }
-          document.body.removeChild(ta)
-        }
-      })
-    })
-
-    /* ---------- 状态渲染 ---------- */
-    async function loadStatus() {
-      var res = await fetch('/admin/api/status')
-      if (res.status === 401) { location.href = '/admin/login'; return }
-      var st = await res.json()
-
-      // 演示模式横幅
-      $('demoBanner').hidden = !st.demo
-
-      // 闲鱼登录态
-      var badge = $('loginBadge')
-      if (st.hasCookie) {
-        badge.textContent = '✓ 已登录'
-        badge.classList.remove('is-off')
-        $('cookieMeta').textContent = 'cookie 更新于 ' + st.cookieMtime
-      } else {
-        badge.textContent = '✗ 未登录'
-        badge.classList.add('is-off')
-        $('cookieMeta').textContent = ''
-      }
-      $('anonTip').hidden = !!st.hasCookie
-
-      // Tokens
-      var tokens = st.tokens || []
-      $('tokenCount').textContent = tokens.length
-      $('tokenTableWrap').hidden = tokens.length === 0
-      $('tokenEmpty').hidden = tokens.length !== 0
-      $('tokenRows').innerHTML = tokens.map(function (t) {
-        return '<tr>' +
-          '<td class="mono">' + esc(t.id) + '</td>' +
-          '<td class="mono">' + esc(t.clientId) + '</td>' +
-          '<td class="mono">' + esc(t.scopes) + '</td>' +
-          '<td class="mono">' + esc(t.expiresAt) + '</td>' +
-          '<td style="text-align:right"><button class="btn btn-ghost btn-sm" data-revoke="' + esc(t.id) + '">吊销</button></td>' +
-          '</tr>'
-      }).join('')
-      $('tokenRows').querySelectorAll('[data-revoke]').forEach(function (btn) {
-        btn.addEventListener('click', async function () {
-          await post('/admin/revoke-token', { id: btn.getAttribute('data-revoke') })
-          toast('token 已吊销')
-          loadStatus()
-        })
-      })
-    }
-
-    /* ---------- 扫码登录 ---------- */
-    var qrTimer = null
-    $('qrStartBtn').addEventListener('click', async function () {
-      var btn = this
-      btn.disabled = true
-      var r = await post('/admin/qr/start')
-      btn.disabled = false
-      if (!r.ok) { toast('二维码生成失败: ' + (r.error || '未知错误')); return }
-      $('qrBox').hidden = false
-      $('qrStatus').textContent = '生成中…'
-      var box = $('qrImg')
-      box.innerHTML = ''
-      if (window.QRCode) {
-        new QRCode(box, { text: r.qr, width: 220, height: 220 })
-      } else {
-        box.innerHTML = '<code class="qr-fallback">' + esc(r.qr) + '</code>'
-      }
-      $('qrStatus').textContent = '请用闲鱼 APP 扫码'
-      $('demoConfirmBtn').hidden = false
-      clearInterval(qrTimer)
-      qrTimer = setInterval(async function () {
-        var s = await (await fetch('/admin/qr/status')).json()
-        if (!s.ok) return
-        if (s.status === 'CONFIRMED') {
-          clearInterval(qrTimer)
-          $('qrStatus').textContent = '已确认，正在刷新…'
-          setTimeout(function () { $('qrBox').hidden = true; $('demoConfirmBtn').hidden = true; loadStatus() }, 800)
-        } else if (['EXPIRED', 'CANCELED', 'ERROR'].includes(s.status)) {
-          clearInterval(qrTimer)
-          $('qrStatus').textContent = '状态: ' + s.status
-          $('demoConfirmBtn').hidden = true
-        } else {
-          $('qrStatus').textContent = '状态: ' + (s.status || 'UNKNOWN')
-        }
-      }, 3000)
-    })
-
-    /* ---------- 演示模式：模拟扫码确认 ---------- */
-    $('demoConfirmBtn').addEventListener('click', async function () {
-      this.disabled = true
-      await post('/admin/api/demo/confirm')
-      this.disabled = false
-      toast('已模拟扫码确认，等待状态刷新…')
-    })
-
-    /* ---------- 清除登录态 / 退出 ---------- */
-    $('clearSessionBtn').addEventListener('click', async function () {
-      await post('/admin/logout-xianyu')
-      toast('登录态已清除')
-      loadStatus()
-    })
-    $('logoutBtn').addEventListener('click', async function () {
-      await post('/admin/logout')
-      location.href = '/admin/login'
-    })
-
-    loadStatus()
-  </script>
+  <script src="/js/app.js"></script>
+  <script src="/js/admin.js"></script>
 </body>
 </html>
