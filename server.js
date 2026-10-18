@@ -27,6 +27,7 @@
  * 依赖：goofish-client 本地构建（/home/ant/dev/goofish-client/dist）
  */
 const path = require('path');
+const fs = require('fs');
 const { z } = require('zod');
 const { McpServer } = require('@modelcontextprotocol/sdk/server/mcp.js');
 const { StreamableHTTPServerTransport } = require('@modelcontextprotocol/sdk/server/streamableHttp.js');
@@ -79,11 +80,36 @@ async function isAuthorized(req) {
 
 // 单例 client（复用匿名 token，避免每次重建触发多次"令牌为空"重试）
 let _client = null;
+const ADMIN_MOD = require('./admin.js');
+
+// 读取持久化的闲鱼登录 cookie（扫码登录后落盘）
+function loadSessionCookie() {
+  try {
+    const p = ADMIN_MOD.COOKIE_FILE;
+    if (fs.existsSync(p)) return fs.readFileSync(p, 'utf8').trim() || null;
+  } catch (e) {}
+  return null;
+}
+
+function createClient() {
+  const cookie = loadSessionCookie();
+  return cookie
+    ? new Goofish({ level: LogLevel.ERROR, cookie })
+    : new Goofish({ level: LogLevel.ERROR });
+}
+
 function getClient() {
-  if (!_client) {
-    _client = new Goofish({ level: LogLevel.ERROR });
-  }
+  if (!_client) _client = createClient();
   return _client;
+}
+
+// 扫码登录后 / admin 清除登录态后重建 client
+function rebuildClient() {
+  try { _client = createClient(); } catch (e) { console.error('rebuildClient:', e.message); }
+}
+
+function clientInfo() {
+  return loadSessionCookie() ? '' : '（MCP 匿名模式：搜索/详情可用，发布等需登录）';
 }
 
 // 从一条搜索结果里稳妥提取 itemId（clickParam 里带 itemId）
@@ -233,18 +259,28 @@ console.error('  register:', oauthMetadata.registration_endpoint || '(disabled)'
 
 // 健康检查（无需鉴权）
 app.get('/health', (req, res) => {
-  res.status(200).json({ status: 'ok', name: 'goofish-mcp', version: '1.0.0', authed: !!API_KEY, oauth: true });
+  res.status(200).json({ status: 'ok', name: 'goofish-mcp', version: '1.0.0', authed: !!API_KEY, oauth: true, admin: !!API_KEY });
 });
 
-// MCP 请求（静态 key 或 OAuth token 均可）
+// Web 管理界面 + OAuth authorize 守卫（须在 OAuth 路由之前挂载才能拦截 /authorize）
+const adminMod = ADMIN_MOD;
+ADMIN_MOD.setupAdmin(app, { apiKey: API_KEY, oauthProvider, rebuildClient, clientInfo, getClient });
+
+// MCP 请求（静态 key 或 OAuth token 均可）+ 防爆破
 app.use('/mcp', async (req, res, next) => {
+  const ip = adminMod.clientIp(req);
+  if (adminMod.isLocked(ip)) {
+    return res.status(429).json({ jsonrpc: '2.0', error: { code: -32001, message: 'Too many failures, IP temporarily locked' }, id: null });
+  }
   if (!(await isAuthorized(req))) {
+    adminMod.recordFail(ip);
     return res.status(401).json({
       jsonrpc: '2.0',
       error: { code: -32001, message: 'Unauthorized: missing or invalid API key / token' },
       id: null,
     });
   }
+  adminMod.recordSuccess(ip);
   next();
 });
 
