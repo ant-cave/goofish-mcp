@@ -192,8 +192,13 @@ server.registerTool('get_item_detail', {
       `卖家: ${sellerDO.nick || '-'}`,
       `图片数: ${(itemDO.imageInfos || []).length}`,
       `链接: ${(itemDO.shareInfoJsonString || '') ? '见图片/hitNativeDetail' : ''}`,
-    ].filter(Boolean).join('\n');
-    return { content: [{ type: 'text', text: lines }] };
+    ].filter(Boolean);
+    const imageUrls = (itemDO.imageInfos || []).map(img => img?.url).filter(Boolean);
+    if (imageUrls.length) {
+      lines.push('图片URL:');
+      for (const u of imageUrls) lines.push(`- ${u}`);
+    }
+    return { content: [{ type: 'text', text: lines.join('\n') }] };
   } catch (e) {
     return { content: [{ type: 'text', text: '详情异常: ' + (e && e.message) }] };
   }
