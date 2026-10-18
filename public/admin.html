@@ -1,0 +1,299 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>管理 · goofish-mcp</title>
+  <link rel="stylesheet" href="/app.css" />
+  <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js" onerror="window.__noqr = 1"></script>
+  <script>
+    // 应用启动前根据本地偏好或系统主题设置暗色模式，避免页面闪烁（复刻 ant-toolkit）
+    ;(function () {
+      var saved = localStorage.getItem('toolkit-theme')
+      var dark = saved ? saved === 'dark' : window.matchMedia('(prefers-color-scheme: dark)').matches
+      document.documentElement.classList.toggle('dark', dark)
+    })()
+  </script>
+</head>
+<body>
+  <!-- 顶栏（复刻 App.vue） -->
+  <header class="topbar">
+    <div class="container topbar-inner">
+      <span class="brand">goofish-mcp</span>
+      <span class="topbar-sub">闲鱼 MCP 管理</span>
+      <div class="topbar-actions">
+        <button type="button" class="icon-btn" id="themeToggle" title="切换主题">
+          <svg id="iconSun" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" hidden><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
+          <svg id="iconMoon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" hidden><path d="M12 3c.132 0 .263 0 .393 0a7.5 7.5 0 0 0 7.92 12.446a9 9 0 1 1 -8.313 -12.454z"/></svg>
+        </button>
+        <button type="button" class="btn btn-ghost btn-sm" id="logoutBtn">退出</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="admin-main">
+    <!-- 演示模式提示（仅 mock 环境出现） -->
+    <div class="demo-banner" id="demoBanner" hidden>
+      <span>演示模式：闲鱼接口为本地模拟数据，扫码后点「模拟扫码确认」即可完成登录流程。</span>
+      <button type="button" class="btn btn-primary btn-sm" id="demoConfirmBtn" hidden>模拟扫码确认</button>
+    </div>
+
+    <!-- 闲鱼登录态 -->
+    <section class="card">
+      <div class="card-head">
+        <span class="card-title">闲鱼登录态</span>
+      </div>
+      <div class="status-row">
+        <span class="status-badge" id="loginBadge">…</span>
+        <span class="status-meta" id="cookieMeta"></span>
+      </div>
+      <p class="anon-tip" id="anonTip" hidden>MCP 匿名模式：搜索 / 详情可用，发布等需登录</p>
+      <div class="qr-actions">
+        <button type="button" class="btn btn-primary" id="qrStartBtn">扫码登录闲鱼</button>
+        <button type="button" class="btn btn-ghost" id="clearSessionBtn">清除登录态</button>
+      </div>
+      <div class="qr-box" id="qrBox" hidden>
+        <div id="qrImg"></div>
+        <div class="qr-status" id="qrStatus"></div>
+      </div>
+    </section>
+
+    <!-- OAuth Tokens -->
+    <section class="card">
+      <div class="card-head">
+        <span class="card-title">OAuth Tokens</span>
+        <span class="card-count" id="tokenCount">0</span>
+      </div>
+      <div id="tokenTableWrap" hidden>
+        <table class="table">
+          <thead>
+            <tr><th>ID</th><th>Client</th><th>Scopes</th><th>过期</th><th></th></tr>
+          </thead>
+          <tbody id="tokenRows"></tbody>
+        </table>
+      </div>
+      <div class="empty" id="tokenEmpty">暂无 token</div>
+    </section>
+
+    <!-- MCP 接入 -->
+    <section class="card">
+      <div class="card-head">
+        <span class="card-title">MCP 接入</span>
+      </div>
+      <div class="kv-list">
+        <div>
+          <div class="kv-label">MCP Endpoint（streamable-http）</div>
+          <div class="code-row">
+            <div class="code-block" id="endpointBox"></div>
+            <button type="button" class="btn btn-ghost btn-sm" data-copy="#endpointBox">复制</button>
+          </div>
+        </div>
+        <div>
+          <div class="kv-label">客户端配置示例（OpenClaw / Claude / ChatGPT）</div>
+          <div class="code-row">
+            <pre class="code-block" id="configBox" style="margin:0"></pre>
+            <button type="button" class="btn btn-ghost btn-sm" data-copy="#configBox">复制</button>
+          </div>
+        </div>
+        <div>
+          <div class="kv-label">鉴权方式：Authorization: Bearer &lt;GOOFISH_API_KEY&gt;（登录密钥，此处不展示）</div>
+        </div>
+        <div>
+          <div class="kv-label">可用工具</div>
+          <div class="tool-list">
+            <div class="tool-item">
+              <div class="tool-name">search_items</div>
+              <div class="tool-desc">关键词搜索闲鱼商品，支持价格区间 / 排序 / 只看个人闲置 / 验货宝筛选，匿名可用</div>
+            </div>
+            <div class="tool-item">
+              <div class="tool-name">get_item_detail</div>
+              <div class="tool-desc">通过 itemId 获取商品完整详情（标题 / 价格 / 描述 / 卖家 / 图片 URL），匿名可用</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <div class="toast" id="toast" hidden></div>
+
+  <script>
+    /* ---------- 主题切换（复刻 toolkit theme store） ---------- */
+    var themeToggle = document.getElementById('themeToggle')
+    var iconSun = document.getElementById('iconSun')
+    var iconMoon = document.getElementById('iconMoon')
+    function refreshIcons() {
+      var dark = document.documentElement.classList.contains('dark')
+      iconSun.hidden = !dark
+      iconMoon.hidden = dark
+      themeToggle.title = dark ? '切换到亮色模式' : '切换到暗色模式'
+    }
+    themeToggle.addEventListener('click', function () {
+      var dark = document.documentElement.classList.contains('dark')
+      localStorage.setItem('toolkit-theme', dark ? 'light' : 'dark')
+      document.documentElement.classList.toggle('dark', !dark)
+      refreshIcons()
+    })
+    refreshIcons()
+
+    /* ---------- Toast ---------- */
+    var toastTimer = null
+    function toast(msg) {
+      var el = document.getElementById('toast')
+      el.textContent = msg
+      el.hidden = false
+      clearTimeout(toastTimer)
+      toastTimer = setTimeout(function () { el.hidden = true }, 2500)
+    }
+
+    /* ---------- 工具 ---------- */
+    function $(id) { return document.getElementById(id) }
+    async function post(url, body) {
+      var res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: body ? JSON.stringify(body) : undefined,
+      })
+      return res.json().catch(function () { return {} })
+    }
+    function esc(s) {
+      return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+        return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+      })
+    }
+
+    /* ---------- 接入信息 ---------- */
+    var endpoint = location.origin + '/mcp'
+    $('endpointBox').textContent = endpoint
+    $('configBox').textContent = JSON.stringify({
+      mcpServers: {
+        goofish: {
+          url: endpoint,
+          transport: 'streamable-http',
+          headers: { Authorization: 'Bearer <your-api-key>' },
+        },
+      },
+    }, null, 2)
+    document.querySelectorAll('[data-copy]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var text = document.querySelector(btn.getAttribute('data-copy')).textContent
+        function ok() { toast('已复制到剪贴板') }
+        function fail() { toast('复制失败，请手动选择复制') }
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(text).then(ok, fail)
+        } else {
+          var ta = document.createElement('textarea')
+          ta.value = text
+          document.body.appendChild(ta)
+          ta.select()
+          try { document.execCommand('copy') ? ok() : fail() } catch (e) { fail() }
+          document.body.removeChild(ta)
+        }
+      })
+    })
+
+    /* ---------- 状态渲染 ---------- */
+    async function loadStatus() {
+      var res = await fetch('/admin/api/status')
+      if (res.status === 401) { location.href = '/admin/login'; return }
+      var st = await res.json()
+
+      // 演示模式横幅
+      $('demoBanner').hidden = !st.demo
+
+      // 闲鱼登录态
+      var badge = $('loginBadge')
+      if (st.hasCookie) {
+        badge.textContent = '✓ 已登录'
+        badge.classList.remove('is-off')
+        $('cookieMeta').textContent = 'cookie 更新于 ' + st.cookieMtime
+      } else {
+        badge.textContent = '✗ 未登录'
+        badge.classList.add('is-off')
+        $('cookieMeta').textContent = ''
+      }
+      $('anonTip').hidden = !!st.hasCookie
+
+      // Tokens
+      var tokens = st.tokens || []
+      $('tokenCount').textContent = tokens.length
+      $('tokenTableWrap').hidden = tokens.length === 0
+      $('tokenEmpty').hidden = tokens.length !== 0
+      $('tokenRows').innerHTML = tokens.map(function (t) {
+        return '<tr>' +
+          '<td class="mono">' + esc(t.id) + '</td>' +
+          '<td class="mono">' + esc(t.clientId) + '</td>' +
+          '<td class="mono">' + esc(t.scopes) + '</td>' +
+          '<td class="mono">' + esc(t.expiresAt) + '</td>' +
+          '<td style="text-align:right"><button class="btn btn-ghost btn-sm" data-revoke="' + esc(t.id) + '">吊销</button></td>' +
+          '</tr>'
+      }).join('')
+      $('tokenRows').querySelectorAll('[data-revoke]').forEach(function (btn) {
+        btn.addEventListener('click', async function () {
+          await post('/admin/revoke-token', { id: btn.getAttribute('data-revoke') })
+          toast('token 已吊销')
+          loadStatus()
+        })
+      })
+    }
+
+    /* ---------- 扫码登录 ---------- */
+    var qrTimer = null
+    $('qrStartBtn').addEventListener('click', async function () {
+      var btn = this
+      btn.disabled = true
+      var r = await post('/admin/qr/start')
+      btn.disabled = false
+      if (!r.ok) { toast('二维码生成失败: ' + (r.error || '未知错误')); return }
+      $('qrBox').hidden = false
+      $('qrStatus').textContent = '生成中…'
+      var box = $('qrImg')
+      box.innerHTML = ''
+      if (window.QRCode) {
+        new QRCode(box, { text: r.qr, width: 220, height: 220 })
+      } else {
+        box.innerHTML = '<code class="qr-fallback">' + esc(r.qr) + '</code>'
+      }
+      $('qrStatus').textContent = '请用闲鱼 APP 扫码'
+      $('demoConfirmBtn').hidden = false
+      clearInterval(qrTimer)
+      qrTimer = setInterval(async function () {
+        var s = await (await fetch('/admin/qr/status')).json()
+        if (!s.ok) return
+        if (s.status === 'CONFIRMED') {
+          clearInterval(qrTimer)
+          $('qrStatus').textContent = '已确认，正在刷新…'
+          setTimeout(function () { $('qrBox').hidden = true; $('demoConfirmBtn').hidden = true; loadStatus() }, 800)
+        } else if (['EXPIRED', 'CANCELED', 'ERROR'].includes(s.status)) {
+          clearInterval(qrTimer)
+          $('qrStatus').textContent = '状态: ' + s.status
+          $('demoConfirmBtn').hidden = true
+        } else {
+          $('qrStatus').textContent = '状态: ' + (s.status || 'UNKNOWN')
+        }
+      }, 3000)
+    })
+
+    /* ---------- 演示模式：模拟扫码确认 ---------- */
+    $('demoConfirmBtn').addEventListener('click', async function () {
+      this.disabled = true
+      await post('/admin/api/demo/confirm')
+      this.disabled = false
+      toast('已模拟扫码确认，等待状态刷新…')
+    })
+
+    /* ---------- 清除登录态 / 退出 ---------- */
+    $('clearSessionBtn').addEventListener('click', async function () {
+      await post('/admin/logout-xianyu')
+      toast('登录态已清除')
+      loadStatus()
+    })
+    $('logoutBtn').addEventListener('click', async function () {
+      await post('/admin/logout')
+      location.href = '/admin/login'
+    })
+
+    loadStatus()
+  </script>
+</body>
+</html>

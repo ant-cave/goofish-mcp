@@ -3,3 +3,6 @@ node_modules/
 .env.*
 *.bak-*
 *.log
+
+# 本地演示运行时数据（mock 登录态等），勿提交
+data/

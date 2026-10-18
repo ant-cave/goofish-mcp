@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>登录 · goofish-mcp</title>
+  <link rel="stylesheet" href="/app.css" />
+  <script>
+    // 应用启动前根据本地偏好或系统主题设置暗色模式，避免页面闪烁（复刻 ant-toolkit）
+    ;(function () {
+      var saved = localStorage.getItem('toolkit-theme')
+      var dark = saved ? saved === 'dark' : window.matchMedia('(prefers-color-scheme: dark)').matches
+      document.documentElement.classList.toggle('dark', dark)
+    })()
+  </script>
+</head>
+<body>
+  <button type="button" class="icon-btn theme-toggle-float" id="themeToggle" title="切换主题">
+    <svg id="iconSun" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" hidden><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
+    <svg id="iconMoon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" hidden><path d="M12 3c.132 0 .263 0 .393 0a7.5 7.5 0 0 0 7.92 12.446a9 9 0 1 1 -8.313 -12.454z"/></svg>
+  </button>
+
+  <main class="login-wrap">
+    <div class="card login-card">
+      <div class="login-head">
+        <span class="brand">goofish-mcp</span>
+        <span class="login-sub">闲鱼 MCP 管理后台</span>
+      </div>
+
+      <div class="login-err" id="loginErr" hidden>密钥错误，请重试</div>
+
+      <form class="login-form" method="post" action="/admin/login">
+        <label class="field-label" for="key">API Key</label>
+        <input class="input" type="password" name="key" id="key" placeholder="请输入管理密钥" autofocus required />
+        <button class="btn btn-primary btn-block" type="submit" style="margin-top:1rem">登 录</button>
+      </form>
+
+      <p class="login-hint">登录密钥即服务端 GOOFISH_API_KEY</p>
+    </div>
+  </main>
+
+  <script>
+    // 主题切换（复刻 toolkit theme store：light / dark / system 三态，默认跟随系统）
+    var themeToggle = document.getElementById('themeToggle')
+    var iconSun = document.getElementById('iconSun')
+    var iconMoon = document.getElementById('iconMoon')
+    function refreshIcons() {
+      var dark = document.documentElement.classList.contains('dark')
+      iconSun.hidden = !dark
+      iconMoon.hidden = dark
+      themeToggle.title = dark ? '切换到亮色模式' : '切换到暗色模式'
+    }
+    themeToggle.addEventListener('click', function () {
+      var dark = document.documentElement.classList.contains('dark')
+      localStorage.setItem('toolkit-theme', dark ? 'light' : 'dark')
+      document.documentElement.classList.toggle('dark', !dark)
+      refreshIcons()
+    })
+    refreshIcons()
+
+    // 登录失败时后端 302 回本页并带 ?err=1
+    if (new URLSearchParams(location.search).get('err') === '1') {
+      document.getElementById('loginErr').hidden = false
+      document.getElementById('key').focus()
+    }
+  </script>
+</body>
+</html>
