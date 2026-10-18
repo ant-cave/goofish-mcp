@@ -12,17 +12,29 @@
  *  - GET  /mcp  —— 405（stateless 不支持 SSE 流）
  *  - GET  /health —— 健康检查（无需鉴权，用于探活）
  *
- * 鉴权（/mcp 两种都放行）：
- *  - 静态 key：请求头 `Authorization: Bearer <GOOFISH_API_KEY>` 或 `x-api-key: <GOOFISH_API_KEY>`
- *  - OAuth token：`Authorization: Bearer <access_token>`（由本服务签发，PKCE 授权码流程）
+ * 鉴权（/mcp 三种都放行）：
+ *  - 管理密钥：`Authorization: Bearer <管理密钥>` 或 `x-api-key`（面板内可热更新）
+ *  - 客户端 API Key：面板「API Keys」创建的多个 key（可增删、禁用）
+ *  - OAuth token：本服务签发（PKCE 授权码流程，面向 ChatGPT 等客户端）
  *
- * OAuth 授权码端点（面向 ChatGPT 等 OAuth 客户端）：
+ * OAuth 授权码端点：
  *  - GET  /.well-known/oauth-authorization-server  —— RFC 8414 metadata
  *  - GET  /.well-known/oauth-protected-resource/mcp —— RFC 9728 PRM
- *  - GET/POST /authorize   —— 授权码发放（自动批准）
+ *  - GET/POST /authorize   —— 授权码发放（须持管理密钥或 admin 会话，自动批准）
  *  - POST /token           —— 授权码换 token / refresh
  *  - POST /register        —— 动态客户端注册
  *  - POST /revoke          —— token 撤销
+ *
+ * 管理后台：/admin（登录页 /admin/login）—— 登录态管理 / API Keys / 调用日志 / 统计
+ *
+ * 模块划分：
+ *  - lib/config.js     管理密钥（热更新）
+ *  - lib/apikeys.js    客户端 API Keys（多 key CRUD）
+ *  - lib/logger.js     调用日志（JSONL 按天切分 + 统计）
+ *  - lib/ratelimit.js  防爆破（IP 计数锁定）
+ *  - lib/session.js    admin 会话（HMAC cookie）
+ *  - routes/admin.js   /admin 路由集合
+ *  - oauth-provider.js 持久化 OAuth provider
  *
  * 依赖：goofish-client 本地构建（/home/ant/dev/goofish-client/dist）
  */
@@ -35,13 +47,23 @@ const { createMcpExpressApp } = require('@modelcontextprotocol/sdk/server/expres
 const { mcpAuthRouter, createOAuthMetadata } = require('@modelcontextprotocol/sdk/server/auth/router.js');
 const { PersistentOAuthProvider } = require('./oauth-provider.js');
 
+const cfg = require('./lib/config.js');
+const apikeys = require('./lib/apikeys.js');
+const mlog = require('./lib/logger.js');
+const rl = require('./lib/ratelimit.js');
+const session = require('./lib/session.js');
+const adminRoutes = require('./routes/admin.js');
+
 const GOOFISH_DIST = process.env.GOOFISH_CLIENT_DIST ||
   '/home/ant/dev/goofish-client/dist/index.js';
 const { Goofish, LogLevel } = require(GOOFISH_DIST);
 
+cfg.init();
+apikeys.init((process.env.GOOFISH_API_KEY || '').trim());
+mlog.cleanup();
+
 const PORT = Number(process.env.GOOFISH_PORT) || 8670;
 const HOST = process.env.GOOFISH_HOST || '127.0.0.1';
-const API_KEY = (process.env.GOOFISH_API_KEY || '').trim();
 // OAuth issuer（必须是 https 公网地址，SDK 强制校验）
 const ISSUER = process.env.GOOFISH_ISSUER || 'http://localhost:8670';
 
@@ -52,42 +74,37 @@ function getOAuthProvider() {
   return _oauthAuth;
 }
 
-// 静态 key 校验
-function matchesApiKey(req) {
-  if (!API_KEY) return false;
-  const header =
-    (req.headers['authorization'] || '').replace(/^Bearer\s+/i, '').trim() ||
-    (req.headers['x-api-key'] || '').trim() ||
-    (req.headers['x-api-token'] || '').trim();
-  return header === API_KEY;
+// 从请求头提取 bearer/key
+function extractKey(req) {
+  return ((req.headers['authorization'] || '').replace(/^Bearer\s+/i, '').trim()) ||
+    ((req.headers['x-api-key'] || '').trim()) ||
+    ((req.headers['x-api-token'] || '').trim());
 }
 
-// 校验 Bearer token：静态 key 优先，否则走 OAuth 校验
-async function isAuthorized(req) {
-  if (matchesApiKey(req)) return true;
-  const header = (req.headers['authorization'] || '').trim();
-  const m = header.match(/^Bearer\s+(.+)$/i);
-  if (!m) return false;
-  const token = m[1].trim();
-  if (!token) return false;
+// /mcp 鉴权：管理密钥 / 客户端 API Key / OAuth token，返回 { auth, keyName } 或 null
+async function authMcp(req) {
+  const header = extractKey(req);
+  if (!header) return null;
+  const adminKey = cfg.get();
+  if (adminKey && header === adminKey) return { auth: 'admin-key', keyName: '(管理密钥)' };
+  const rec = apikeys.verify(header);
+  if (rec) return { auth: 'api-key', keyName: rec.name };
   try {
-    const info = await getOAuthProvider().verifyAccessToken(token);
-    return !!info.token;
-  } catch (e) {
-    return false;
-  }
+    const info = await getOAuthProvider().verifyAccessToken(header);
+    if (info.token) return { auth: 'oauth-token', keyName: 'oauth:' + String(info.clientId || '').slice(0, 8) };
+  } catch (e) { /* fallthrough */ }
+  return null;
 }
 
 // 单例 client（复用匿名 token，避免每次重建触发多次"令牌为空"重试）
 let _client = null;
-const ADMIN_MOD = require('./admin.js');
 
 // 读取持久化的闲鱼登录 cookie（扫码登录后落盘）
 function loadSessionCookie() {
   try {
-    const p = ADMIN_MOD.COOKIE_FILE;
+    const p = adminRoutes.COOKIE_FILE;
     if (fs.existsSync(p)) return fs.readFileSync(p, 'utf8').trim() || null;
-  } catch (e) {}
+  } catch (e) { /* ignore */ }
   return null;
 }
 
@@ -237,7 +254,7 @@ const app = createMcpExpressApp({
 });
 
 // OAuth /authorize 守卫：须在 mcpAuthRouter 之前挂载才能拦截 /authorize（堵"自动批准"公网裸奔洞）
-ADMIN_MOD.mountAuthorizeGuard(app, API_KEY);
+adminRoutes.mountAuthorizeGuard(app);
 
 // ---- OAuth 授权码服务器（挂载到 app 根）----
 const oauthProvider = getOAuthProvider();
@@ -267,32 +284,43 @@ app.get('/.well-known/oauth-protected-resource/mcp', (req, res) => {
 
 // 健康检查（无需鉴权）
 app.get('/health', (req, res) => {
-  res.status(200).json({ status: 'ok', name: 'goofish-mcp', version: '1.0.0', authed: !!API_KEY, oauth: true, admin: !!API_KEY });
+  res.status(200).json({ status: 'ok', name: 'goofish-mcp', version: '1.0.0', authed: !!cfg.get(), oauth: true, admin: !!cfg.get() });
 });
 
-// Web 管理界面 + OAuth authorize 守卫（须在 OAuth 路由之前挂载才能拦截 /authorize）
-const adminMod = ADMIN_MOD;
-ADMIN_MOD.setupAdmin(app, { apiKey: API_KEY, oauthProvider, rebuildClient, clientInfo, getClient });
+// Web 管理界面 + 静态资源（/admin 路由内部按会话放行）
+adminRoutes.setupAdmin(app, { oauthProvider, rebuildClient, clientInfo, getClient });
 
-// MCP 请求（静态 key 或 OAuth token 均可）+ 防爆破
+// MCP 请求（管理密钥 / 客户端 API Key / OAuth token）+ 防爆破
 app.use('/mcp', async (req, res, next) => {
-  const ip = adminMod.clientIp(req);
-  if (adminMod.isLocked(ip)) {
+  const ip = rl.clientIp(req);
+  if (rl.isLocked(ip)) {
+    mlog.log({ kind: 'mcp', ip, action: req.body?.method || '(locked)', ok: false, error: 'ip locked', ms: 0 });
     return res.status(429).json({ jsonrpc: '2.0', error: { code: -32001, message: 'Too many failures, IP temporarily locked' }, id: null });
   }
-  if (!(await isAuthorized(req))) {
-    adminMod.recordFail(ip);
+  const auth = await authMcp(req);
+  if (!auth) {
+    rl.recordFail(ip);
+    mlog.log({ kind: 'mcp', ip, action: req.body?.method || '(unauthorized)', ok: false, error: 'unauthorized', ms: 0 });
     return res.status(401).json({
       jsonrpc: '2.0',
       error: { code: -32001, message: 'Unauthorized: missing or invalid API key / token' },
       id: null,
     });
   }
-  adminMod.recordSuccess(ip);
+  rl.recordSuccess(ip);
+  req.mcpAuth = auth; // { auth, keyName }，供调用日志展示
   next();
 });
 
 app.post('/mcp', async (req, res) => {
+  const t0 = Date.now();
+  const body = req.body || {};
+  const action = body.method || '(unknown)';
+  const tool = body.params && body.params.name;
+  const detail = body.params && body.params.arguments
+    ? JSON.stringify(body.params.arguments).slice(0, 500)
+    : undefined;
+  const logRow = { kind: 'mcp', ip: rl.clientIp(req), action, tool, auth: req.mcpAuth?.auth, keyName: req.mcpAuth?.keyName, detail };
   try {
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
     await server.connect(transport);
@@ -301,8 +329,10 @@ app.post('/mcp', async (req, res) => {
       transport.close();
       server.close();
     });
+    mlog.log({ ...logRow, ok: true, ms: Date.now() - t0 });
   } catch (e) {
     console.error('Error handling MCP request:', e);
+    mlog.log({ ...logRow, ok: false, error: e.message, ms: Date.now() - t0 });
     if (!res.headersSent) {
       res.status(500).json({
         jsonrpc: '2.0',
