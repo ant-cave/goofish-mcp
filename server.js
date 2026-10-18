@@ -3,8 +3,8 @@
  * goofish-mcp — 闲鱼只读查询 MCP server（HTTP / Streamable + OAuth）
  *
  * 工具：
- *  - search_items:      按关键词搜索闲鱼商品（匿名，无需登录）
- *  - get_item_detail:   获取商品详情（匿名，无需登录）
+ *  - search_items:      按关键词搜索闲鱼商品（闲鱼侧匿名 token，无需闲鱼登录态）
+ *  - get_item_detail:   获取商品详情（闲鱼侧匿名 token，无需闲鱼登录态）
  *
  * 传输：MCP over Streamable HTTP（stateless，无会话状态）
  * 端点：
@@ -144,7 +144,7 @@ const server = new McpServer({
 
 server.registerTool('search_items', {
   title: '搜索闲鱼商品',
-  description: '按关键词搜索闲鱼(Goofish)二手商品，匿名可用。返回商品标题、价格、描述和 itemId。可传价格区间、排序、快速筛选(个人闲置/验货宝等)。',
+  description: '按关键词搜索闲鱼(Goofish)二手商品。返回商品标题、价格、描述和 itemId。可传价格区间、排序、快速筛选(个人闲置/验货宝等)。',
   inputSchema: {
     keyword: z.string().describe('搜索关键词，如 "MacBook Pro M1"'),
     page: z.number().optional().describe('页码，从 1 开始，默认 1'),
@@ -197,7 +197,7 @@ server.registerTool('search_items', {
 
 server.registerTool('get_item_detail', {
   title: '获取闲鱼商品详情',
-  description: '通过 itemId 获取闲鱼商品完整详情（标题、价格、描述、卖家、浏览/收藏数、图片数等），匿名可用。',
+  description: '通过 itemId 获取闲鱼商品完整详情（标题、价格、描述、卖家、浏览/收藏数、图片 URL 列表）。',
   inputSchema: {
     item_id: z.string().describe('商品 ID，如 1045859220365（可来自 search_items 结果）'),
   },
