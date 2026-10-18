@@ -1,0 +1,17 @@
+{
+  "name": "goofish-mcp",
+  "version": "1.0.0",
+  "description": "MCP server for Goofish (Xianyu) read-only search & item detail, via goofish-client",
+  "type": "commonjs",
+  "main": "server.js",
+  "bin": {
+    "goofish-mcp": "./server.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "zod": "^4.5.2"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
