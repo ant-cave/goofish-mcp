@@ -19,11 +19,42 @@ node server.js
 
 默认监听 `127.0.0.1:8670`。建议前置 nginx 反代到公网域名（需配置 `GOOFISH_ISSUER` 与 HTTPS）。
 
-## 鉴权
+## 客户端接入
 
-- 静态 key：`Authorization: Bearer <GOOFISH_API_KEY>` 或 `x-api-key`
-- OAuth：本服务自签发（PKCE 授权码，自动批准），Bearer access token 同样可用
-- 健康检查 `/health` 无需鉴权
+MCP endpoint（streamable-http）：
+
+```
+https://<your-domain>/mcp
+```
+
+鉴权二选一：
+
+1. 静态 key（最简单）：请求头带 `Authorization: Bearer <GOOFISH_API_KEY>` 或 `x-api-key: <key>`
+2. OAuth：标准 MCP OAuth 流程（PKCE）。`/authorize` 现已要求鉴权——发起授权时携带 `?key=<GOOFISH_API_KEY>`，或使用已登录 `/admin` 的会话
+
+OpenClaw / Claude / ChatGPT 等客户端的 MCP 配置示例：
+
+```json
+{
+  "mcpServers": {
+    "goofish": {
+      "url": "https://<your-domain>/mcp",
+      "transport": "streamable-http",
+      "headers": { "Authorization": "Bearer <GOOFISH_API_KEY>" }
+    }
+  }
+}
+```
+
+## 管理界面
+
+`https://<your-domain>/admin` — 闲鱼扫码登录、登录态管理、OAuth token 查看/吊销。登录密钥即 `GOOFISH_API_KEY`。
+
+## 安全
+
+- 防爆破：`/mcp` 与 `/admin` 鉴权失败按 IP 计数，超限临时锁定（默认 10 次/10min 锁 15min）
+- OAuth `/authorize` 必须携带凭证，无匿名授权
+- `/health` 无需鉴权（仅状态信息）
 
 ## 依赖
 
