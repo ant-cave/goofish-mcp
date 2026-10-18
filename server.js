@@ -236,6 +236,9 @@ const app = createMcpExpressApp({
   allowedHosts: (process.env.GOOFISH_ALLOWED_HOSTS || 'localhost,127.0.0.1,::1').split(',').map(s => s.trim()).filter(Boolean),
 });
 
+// OAuth /authorize 守卫：须在 mcpAuthRouter 之前挂载才能拦截 /authorize（堵"自动批准"公网裸奔洞）
+ADMIN_MOD.mountAuthorizeGuard(app, API_KEY);
+
 // ---- OAuth 授权码服务器（挂载到 app 根）----
 const oauthProvider = getOAuthProvider();
 const issuerUrl = new URL(ISSUER);
@@ -256,6 +259,11 @@ console.error('goofish-mcp OAuth issuer:', oauthMetadata.issuer);
 console.error('  authorize:', oauthMetadata.authorization_endpoint);
 console.error('  token:   ', oauthMetadata.token_endpoint);
 console.error('  register:', oauthMetadata.registration_endpoint || '(disabled)');
+
+// RFC 9728 protected resource metadata（MCP 客户端据此发现授权服务器）
+app.get('/.well-known/oauth-protected-resource/mcp', (req, res) => {
+  res.json({ resource: ISSUER + '/mcp', authorization_servers: [ISSUER] });
+});
 
 // 健康检查（无需鉴权）
 app.get('/health', (req, res) => {
